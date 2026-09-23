@@ -4,31 +4,66 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main", "master" ]
+    paths:
+      - "TurtleSoupAdaptiveBot.cs"
+      - ".github/workflows/build.yml"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout files
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Install .NET 8
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
+      - name: Pull official cTrader CLI image
+        run: docker pull ghcr.io/spotware/ctrader-console:latest
 
-      - name: Restore packages
-        run: dotnet restore TurtleSoupAdaptiveBot.csproj
+      - name: Create current cTrader project
+        run: |
+          rm -rf GeneratedTurtleSoupBot
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ghcr.io/spotware/ctrader-console:latest \
+            create cbot GeneratedTurtleSoupBot csharp
 
-      - name: Build .algo
-        run: dotnet build TurtleSoupAdaptiveBot.csproj --configuration Release -p:AlgoPublish=false -p:IncludeSource=true
+      - name: Insert Turtle Soup bot source
+        run: |
+          GENERATED_CS="$(find GeneratedTurtleSoupBot -type f -name '*.cs' | head -n 1)"
+          if [ -z "$GENERATED_CS" ]; then
+            echo "Could not find the C# file created by cTrader CLI."
+            find GeneratedTurtleSoupBot -maxdepth 4 -type f -print || true
+            exit 1
+          fi
+          echo "Replacing generated source: $GENERATED_CS"
+          cp TurtleSoupAdaptiveBot.cs "$GENERATED_CS"
 
-      - name: Show generated files
-        run: find . -type f \( -name "*.algo" -o -name "*.dll" \) -print
+      - name: Build .algo with official cTrader CLI
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ghcr.io/spotware/ctrader-console:latest \
+            build GeneratedTurtleSoupBot
+
+      - name: Locate generated .algo
+        id: locate
+        run: |
+          echo "Generated files:"
+          find GeneratedTurtleSoupBot -type f -print
+          ALGO_FILE="$(find GeneratedTurtleSoupBot -type f -name '*.algo' | head -n 1)"
+          if [ -z "$ALGO_FILE" ]; then
+            echo "Build command completed but no .algo file was found."
+            exit 1
+          fi
+          echo "Found: $ALGO_FILE"
+          mkdir -p artifact
+          cp "$ALGO_FILE" artifact/TurtleSoupAdaptiveBot.algo
 
       - name: Upload cBot
         uses: actions/upload-artifact@v4
         with:
           name: TurtleSoupAdaptiveBot-algo
-          path: "**/*.algo"
+          path: artifact/TurtleSoupAdaptiveBot.algo
           if-no-files-found: error
