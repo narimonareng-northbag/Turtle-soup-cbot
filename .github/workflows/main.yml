@@ -1,0 +1,34 @@
+name: Build cTrader cBot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout files
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore packages
+        run: dotnet restore TurtleSoupAdaptiveBot.csproj
+
+      - name: Build .algo
+        run: dotnet build TurtleSoupAdaptiveBot.csproj --configuration Release -p:AlgoPublish=false -p:IncludeSource=true
+
+      - name: Show generated files
+        run: find . -type f \( -name "*.algo" -o -name "*.dll" \) -print
+
+      - name: Upload cBot
+        uses: actions/upload-artifact@v4
+        with:
+          name: TurtleSoupAdaptiveBot-algo
+          path: "**/*.algo"
+          if-no-files-found: error
